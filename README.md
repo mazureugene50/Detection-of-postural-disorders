@@ -1,6 +1,6 @@
 # 🧍 Intelligent Human Posture Detection System
 
-This project uses a YOLO-based pose detection model to analyze human posture from images. It leverages the **Ultralytics YOLOv8** framework and **Gradio** for an interactive web interface. The system identifies key spinal points and evaluates posture quality using simple geometric heuristics.
+This project uses a YOLO-based pose detection model to analyze human posture from images. It leverages the **Ultralytics YOLOv11** framework and **Gradio** for an interactive web interface. The system identifies key spinal points and evaluates posture quality using simple geometric heuristics.
 
 ## 🚀 Features
 
