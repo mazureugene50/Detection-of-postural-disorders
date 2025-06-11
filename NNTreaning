@@ -1,0 +1,39 @@
+!pip install ultralytics kagglehub
+
+# Імпортуємо необхідні модулі
+import os
+import zipfile
+from ultralytics import YOLO
+import kagglehub
+
+dataset_dir = kagglehub.dataset_download("melsmm/posture-keypoints-detection")
+
+zip_path = "/content/archive.zip"
+unzip_dir = "/content/dataset"
+
+if not os.path.exists(unzip_dir):
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(unzip_dir)
+
+print("Файли в dataset_dir:", os.listdir(unzip_dir))  # Перевіряємо
+
+data_yaml_path = os.path.join(unzip_dir, "data.yaml")
+
+data_yaml_content = f"""
+train: {unzip_dir}/images/train
+val: {unzip_dir}/images/val
+test: {unzip_dir}/images/test
+
+nc: 1  # Кількість класів (змініть за потреби)
+names: ["pose"]  # Назва класу (змініть за потреби)
+"""
+
+with open(data_yaml_path, "w") as f:
+    f.write(data_yaml_content)
+
+print("Оновлений data.yaml збережено!")
+
+model = YOLO("yolo11s-pose.pt") 
+model = YOLO("/content/yolo11s-pose.pt")
+
+results = model.train(data=data_yaml_path, epochs=200, imgsz=640, batch=32)
