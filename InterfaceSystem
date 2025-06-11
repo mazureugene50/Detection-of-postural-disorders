@@ -1,0 +1,116 @@
+import gradio as gr
+import cv2
+import numpy as np
+from PIL import Image
+from ultralytics import YOLO
+import matplotlib.pyplot as plt
+
+# Завантаження моделі (використай відповідний шлях або назву)
+model = YOLO("/content/best.pt")
+
+# Функція побудови графіку хребта
+def plot_spine_profile(spine_points):
+    x_vals = [p[0] for p in spine_points]
+    y_vals = [p[1] for p in spine_points]
+
+    fig, ax = plt.subplots()
+    ax.plot(x_vals, y_vals, 'bo-', linewidth=2)
+    ax.set_title('Профіль хребта')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+
+    ax.set_aspect('equal')  # Зберігає правильні пропорції
+    ax.invert_yaxis()       # Щоб "верх" був вгорі, як у фото
+    ax.grid(True)
+
+    return fig
+
+# Функція для простої оцінки постави
+def analyze_posture(spine_points):
+    cervical, thoracic, lumbar, sacral = spine_points
+    angles = []
+    for i in range(len(spine_points) - 2):
+        a, b, c = spine_points[i], spine_points[i + 1], spine_points[i + 2]
+        ba = np.array([a[0] - b[0], a[1] - b[1]])
+        bc = np.array([c[0] - b[0], c[1] - b[1]])
+        cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+        angle = np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0)))
+        angles.append(angle)
+
+    if all(160 <= angle <= 180 for angle in angles):
+        return "✅ Положення хребта в межах норми."
+    else:
+        return f"⚠️ Можливе викривлення. Виміряні кути: {', '.join(f'{a:.1f}°' for a in angles)}"
+
+# Основна функція аналізу
+def yolo_posture_analysis(pil_img, view_angle, model_version):
+    image = np.array(pil_img)
+    image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+    results = model(image_bgr)
+    keypoints = results[0].keypoints.xy if len(results) > 0 else None
+
+    if keypoints is not None and keypoints.numel() > 0:
+        kpts = keypoints[0].tolist()
+
+        # Використовуємо перші 4 точки як хребет (підлаштуй за потребою)
+        cervical = kpts[0]
+        thoracic = kpts[1]
+        lumbar = kpts[2]
+        sacral = kpts[3]
+        spine_points = [cervical, thoracic, lumbar, sacral]
+
+        # Візуалізація
+        for point in spine_points:
+            x, y = int(point[0]), int(point[1])
+            cv2.circle(image_bgr, (x, y), 5, (0, 0, 255), -1)
+        for i in range(len(spine_points) - 1):
+            cv2.line(image_bgr, tuple(map(int, spine_points[i])), tuple(map(int, spine_points[i + 1])), (255, 0, 0), 2)
+
+        analyzed_image = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
+        diagnosis = analyze_posture(spine_points)
+        spine_plot = plot_spine_profile(spine_points)
+
+        return analyzed_image, f"[{model_version}] ({view_angle}):\n{diagnosis}", spine_plot
+    else:
+        return pil_img, f"[{model_version}] ({view_angle}): Осіб не виявлено на зображенні.", plt.figure()
+
+# Функція прикладів
+def load_example_image(index):
+    example_paths = ["example_back.jpg", "example_side.jpg"]
+    return Image.open(example_paths[index])
+
+# Gradio UI
+with gr.Blocks() as demo:
+    gr.Markdown("## Інтелектуальна система виявлення порушень постави людини за фото")
+
+    with gr.Row():
+        with gr.Column():
+            input_image = gr.Image(type="pil", label="Завантажити зображення або обрати приклад")
+
+            with gr.Row():
+                example_btn_1 = gr.Button("📸 Приклад: спереду")
+                example_btn_2 = gr.Button("📸 Приклад: збоку")
+
+            view_selector = gr.Radio(["вигляд ззаду", "вигляд збоку"], label="Кут огляду", value="вигляд ззаду")
+            model_selector = gr.Dropdown(["yolo11s-pose20Ep", "yolo11s-pose50Ep", "yolo11s-pose100Ep"],
+                                         label="Версія нейромережі", value="yolo11s-pose100Ep")
+
+            analyze_btn = gr.Button("Проаналізувати поставу")
+
+        with gr.Column():
+            output_image = gr.Image(label="Результат аналізу")
+            result_text = gr.Textbox(label="Оцінка", interactive=False)
+            output_plot = gr.Plot(label="Графік профілю хребта")
+
+    # Події
+    example_btn_1.click(fn=lambda: load_example_image(0), outputs=input_image)
+    example_btn_2.click(fn=lambda: load_example_image(1), outputs=input_image)
+
+    analyze_btn.click(
+        fn=yolo_posture_analysis,
+        inputs=[input_image, view_selector, model_selector],
+        outputs=[output_image, result_text, output_plot]
+    )
+
+demo.launch()
